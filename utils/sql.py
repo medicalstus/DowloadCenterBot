@@ -10,7 +10,7 @@ class sql:
 	# connection
 	@staticmethod
 	def connect():
-		db = pymysql.connect(host="localhost", user=DBUSER, password=DBPASS, database=DATABASE, autocommit=False)
+		db = pymysql.connect(host="dl-center-bot-db", user=DBUSER, password=DBPASS, database=DATABASE, autocommit=False)
 		db_cursor = db.cursor()
 		return db, db_cursor
 	
