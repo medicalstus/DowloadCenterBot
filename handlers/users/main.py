@@ -7,7 +7,7 @@ from pyromod.helpers import kb, ikb
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler 
 from pyromod.exceptions.listener_timeout import ListenerTimeout
 
-from utils.sql import sql
+from utils import api
 from utils.helpers import CmdException, send_error, log_error, buttons, check_user, write_error, chunk
 
 
@@ -22,9 +22,8 @@ async def start_cmd(bot, msg):
 	
 	try:
 		
-		ls = sql.get('SELECT list FROM messages WHERE name = "start"')
-		ls = eval(ls)
-		
+		ls = api.message_get("start")
+
 		if not ls:
 			await msg.reply("🤖 خوش آمدید", reply_markup=buttons(msg.from_user))
 			return
@@ -46,42 +45,39 @@ async def files_cmd(bot, msg):
 	
 	try:
 		
-		files_count = sql.get("SELECT COUNT(*) FROM files")
-		if files_count <= 0:
+		if not api.dc_categories(0) and not api.dc_files(0):
 			raise CmdException("❌ جزوه ای ثبت نشده")
-		
-		inx = sql.get("SELECT top FROM categories ORDER BY top LIMIT 1")
-		if not inx:
-			inx = 0
-		top_inx = inx
+
+		inx = 0
+		top_inx = 0
 		step = 0
 		moves = []
 		first = True
 		resend = False
-		
-		categories = sql.chain(f"SELECT id, name FROM categories WHERE top = {inx}")
-		
+
+		categories = [v for c in api.dc_categories(inx) for v in (c["id"], c["name"])]
+
 		while True:
 			if not first:
-				categories = sql.chain(f"SELECT id, name FROM categories WHERE top = {inx}")
-			
+				categories = [v for c in api.dc_categories(inx) for v in (c["id"], c["name"])]
+
 			categories = chunk(categories, 2)
 			base = []
-			
+
 			if inx == top_inx:
 				base.append([("بستن منو", "close")])
 			else:
 				base.append([("بستن منو", "close"), ("بازگشت", "back")])
-			
+
 			for i in range(len(categories)):
 				id, name = categories[i]
 				base.insert(i, [(f"🔻 {name}", f"category/{id}")])
-			
-			files = sql.chain(f"SELECT id, name, file_id FROM files WHERE category = {inx}")
+
+			files = [v for f in api.dc_files(inx) for v in (f["id"], f["name"], f["file_url"])]
 			if files:
 				files = chunk(files, 3)
 				for i in range(len(files)):
-					id, name, file_id = files[i]
+					id, name, file_url = files[i]
 					base.insert(i + len(categories), [(name, f"file/{id}")])
 			
 			if len(files) > 1:
@@ -109,15 +105,23 @@ async def files_cmd(bot, msg):
 			
 			if ans.startswith("file/"):
 				id = int(ans.split("/")[1])
-				name, file_id = next((name, file_id) for fid, name, file_id in files if fid == id)
-				
-				await msg.reply_document(file_id, caption=f"📄 {name}")
+				name, file_url = next((name, file_url) for fid, name, file_url in files if fid == id)
+
+				await msg.reply_document(file_url, caption=f"📄 {name}")
+				try:
+					api.dc_file_increment(id)
+				except:
+					pass
 				await waiter.delete()
 				resend = True
-				
+
 			elif ans == "sendallfiles":
-				for id, name, file_id in files:
-					await msg.reply_document(file_id, caption=f"📄 {name}")
+				for id, name, file_url in files:
+					await msg.reply_document(file_url, caption=f"📄 {name}")
+					try:
+						api.dc_file_increment(id)
+					except:
+						pass
 					await sleep(.2)
 				await waiter.delete()
 				resend = True
@@ -162,9 +166,8 @@ async def saved_msg_cmd(bot, msg):
 		elif msg.text == "🛂 مشاوران مدیکال":
 			part = "advisors"
 		
-		ls = sql.get(f'SELECT list FROM messages WHERE name = "{part}"')
-		ls = eval(ls)
-		
+		ls = api.message_get(part)
+
 		if not ls:
 			await msg.reply("❌ پیام این دستور هنوز تنظیم نشده", reply_markup=buttons(msg.from_user))
 			return
@@ -198,7 +201,7 @@ async def check_force_button(bot, call):
 	
 	try:
 		
-		channels = sql.chain("SELECT channel FROM channels")
+		channels = api.channel_ids()
 		if channels:
 			joined = True
 			
@@ -226,7 +229,7 @@ async def check_force_button(bot, call):
 				return
 		
 		await call.message.delete()
-		text = sql.get("SELECT start FROM texts")
+		text = api.text("start")
 		await bot.send_message(call.from_user.id, text, reply_markup=buttons(call.from_user))
 		
 	except:

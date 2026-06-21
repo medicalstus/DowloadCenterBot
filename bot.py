@@ -1,7 +1,15 @@
+# coding=utf-8
+
+"""
+Created by Cypher
+ParsCoders = https://parscoders.com/resume/340299
+"""
+
+
 from pyromod import Client
 from pyrogram import idle, filters
 
-from utils.sql import sql
+from utils import api
 from utils.env import TOKEN, API_ID, API_HASH, PROXY, PROXY_ADDR, PROXY_PORT
 
 
@@ -70,7 +78,7 @@ async def on_callback():
 bot.start()
 
 me = bot.get_users("me")
-sql.run("UPDATE settings SET username = %s", (me.username,))
+api.set_username(me.username)
 bot.username = me.username
 
 register()

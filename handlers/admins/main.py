@@ -8,7 +8,7 @@ from pyromod.helpers import ikb
 from pyrogram.handlers import MessageHandler
 from pyromod.exceptions.listener_timeout import ListenerTimeout
 
-from utils.sql import sql
+from utils import api
 from utils.helpers import CmdException, admin_buttons, isAdmin, send_error, log_error, chunk
 
 
@@ -33,34 +33,37 @@ async def manage_files_cmd(bot, msg):
 	
 	try:
 		
-		inx = sql.get("SELECT top FROM categories ORDER BY top LIMIT 1")
-		if not inx:
-			inx = 0
+		roots = api.categories_roots()
+		inx = roots[0]["top"] if roots else 0
 		top_inx = inx
 		step = 0
 		moves = []
 		first = True
 		resend = False
-		
-		categories = sql.chain(f"SELECT id, name FROM categories WHERE top = {inx}")
-		
+
+		categories = [v for c in roots for v in (c["id"], c["name"])]
+
 		while True:
 			if not first:
-				categories = sql.chain(f"SELECT id, name FROM categories WHERE top = {inx}")
-			
+				if inx == top_inx:
+					cats = api.categories_roots()
+				else:
+					cats = api.categories_by_top(inx)
+				categories = [v for c in cats for v in (c["id"], c["name"])]
+
 			categories = chunk(categories, 2)
 			base = [[("✅ ثبت جزوه", "newFile"), ("🗃️ زیر دسته", "sub")]]
-			
+
 			if inx == top_inx:
 				base.append([("بستن منو", "close")])
 			else:
 				base.append([("بستن منو", "close"), ("بازگشت", "back")])
-			
+
 			for i in range(len(categories)):
 				id, name = categories[i]
 				base.insert(i, [(f"🔻 {name}", f"category/{id}")])
-			
-			files = sql.chain(f"SELECT id, name FROM files WHERE category = {inx}")
+
+			files = [v for f in api.files_by_category(inx) for v in (f["id"], f["name"])]
 			if files:
 				files = chunk(files, 2)
 				for i in range(len(files)):
@@ -91,7 +94,8 @@ async def manage_files_cmd(bot, msg):
 				id = int(ans.split("/")[1])
 				
 				while True:
-					name, file_id = sql.chain(f"SELECT name, file_Id FROM files WHERE id = {id}")
+					_file = api.file_get(id)
+					name, file_id = _file["name"], _file["file_id"]
 					
 					conf_btn = ikb([
 						[("❌ حذف جزوه", "delete")],
@@ -129,7 +133,7 @@ async def manage_files_cmd(bot, msg):
 						ans = click.data
 						
 						if ans == "confdelete":
-							sql.run(f"DELETE FROM files WHERE id = {id}")
+							api.file_delete(id)
 							await click.answer("✅ حذف شد")
 							break
 					
@@ -194,7 +198,7 @@ async def manage_files_cmd(bot, msg):
 							
 							ans = ask.document.file_id
 						
-						sql.run(f"UPDATE files SET {part} = %s WHERE id = {id}", (ans,))
+						api.file_update(id, **{part: ans})
 						await bot.delete_messages(msg.chat.id, deletes, revoke=True)
 					
 					elif ans == "sendfile":
@@ -244,7 +248,7 @@ async def manage_files_cmd(bot, msg):
 					await msg.reply("❌ باید فایل جزوه را ارسال میکردید")
 					continue
 				
-				sql.run(f"INSERT INTO files (category, name, step, file_id) VALUES ({inx}, %s, %s, %s)", (name, step, file_ask.document.file_id))
+				api.file_add(inx, name, step, file_ask.document.file_id)
 				await msg.reply("✅ جزوه اضافه شد")
 			
 			elif ans == "sub":
@@ -289,7 +293,7 @@ async def manage_files_cmd(bot, msg):
 						else:
 							new_top = inx
 						
-						sql.run(f"INSERT INTO categories (name, top, step) VALUES (%s, {new_top}, {step})", (name,))
+						api.category_add(name, new_top, step)
 						await bot.delete_messages(msg.chat.id, deletes, revoke=True)
 						break
 					
@@ -336,10 +340,8 @@ async def manage_files_cmd(bot, msg):
 								ans = click.data
 								
 								if ans == "confdelete":
-									sql.run(f"DELETE FROM categories WHERE id = {id}")
-									sql.run(f"DELETE FROM categories WHERE step > {step}")
-									sql.run(f"DELETE FROM files WHERE step > {step}")
-									
+									api.category_delete(id, cascade=True)
+
 									try:
 										inx = moves[-1]
 										moves.pop()
@@ -394,9 +396,10 @@ async def bot_stats_cmd(bot, msg):
 	
 	try:
 		
-		users = sql.get("SELECT COUNT(*) FROM users")
-		files = sql.get("SELECT COUNT(*) FROM files")
-		down = sql.get("SELECT SUM(count) FROM files")
+		data = api.stats()
+		users = data["users"]
+		files = data["files"]
+		down = data["downloads"]
 		users = users if users != None else 0
 		files = files if files != None else 0
 		down = down if down != None else 0
@@ -415,22 +418,21 @@ async def users_list_cmd(bot, msg):
 	
 	try:
 		
-		ls = sql.chain(f"SELECT id, username, name, number FROM users")
-		
+		ls = api.users_all()
+
 		if not ls:
 			raise CmdException("❌ اطلاعاتی ثبت نشده است")
-		
+
 		await msg.reply("⌛ لطفا صبر کنید...")
-		
-		ls = chunk(ls, 4)
+
 		users = []
-		
-		for id, username, name, number in ls:
+
+		for u in ls:
 			users.append({
-				"id": id,
-				"username": username,
-				"name": name,
-				"number": number
+				"id": u["id"],
+				"username": u["username"],
+				"name": u["name"],
+				"number": u["number"]
 			})
 		
 		filename = "users_data.json"

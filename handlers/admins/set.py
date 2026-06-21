@@ -6,7 +6,7 @@ from pyromod.helpers import kb, ikb
 from pyrogram.handlers import MessageHandler
 from pyromod.exceptions.listener_timeout import ListenerTimeout
 
-from utils.sql import sql
+from utils import api
 from utils.wait import wait
 from handlers.admins.main import admin_cmd
 from utils.helpers import CmdException, admin_buttons, isHead, isAdmin, send_error, log_error, chunk
@@ -60,15 +60,15 @@ async def add_admin_cmd(bot, msg):
 		
 		id = int(id)
 		
-		user = sql.get(f"SELECT id FROM users WHERE id = {id}")
+		user = api.user_get(id)
 		if not user:
 			raise CmdException("❌ کاربر یافت نشد", menu=btns)
-		
-		admin = sql.get(f"SELECT id FROM admins WHERE id = {id}")
+
+		admin = api.admin_get(id)
 		if admin:
 			raise CmdException("❌ کاربر در حال حاضر ادمین است", menu=btns)
-		
-		sql.run(f"INSERT INTO admins (id, type) VALUES ({id}, %s)", ("admin",))
+
+		api.admin_add(id, "admin")
 		
 		await msg.reply("✅ اضافه شد", reply_markup=btns)
 		
@@ -84,8 +84,8 @@ async def remove_admin_cmd(bot, msg):
 	
 	try:
 		
-		admins = sql.chain('SELECT id FROM admins WHERE type = "admin"')
-		
+		admins = api.admin_ids('admin')
+
 		if admins == []:
 			raise CmdException("❌ هیچ ادمینی وجود ندارد", menu=False)
 		
@@ -104,7 +104,8 @@ async def remove_admin_cmd(bot, msg):
 				return
 			
 			id = admins[inx]
-			username = sql.get(f"SELECT username FROM users WHERE id = {id}")
+			_user = api.user_get(id)
+			username = _user["username"] if _user else None
 			username = f"@{username}" if username != None else "ثبت نشده"
 			text = f"{inx + 1}/{len(admins)}\n👤 `{id}`\n🆔 آیدی : {username}"
 			
@@ -143,7 +144,7 @@ async def remove_admin_cmd(bot, msg):
 				ans = click.data
 				
 				if ans == "confdelete":
-					sql.run(f"DELETE FROM admins WHERE id = {id}")
+					api.admin_delete(id)
 					admins.pop(inx)
 					
 					if inx - 1 > 0:
@@ -241,8 +242,8 @@ async def add_channel_cmd(bot, msg):
 		if not chat.username:
 			raise CmdException("❌ کانال ایدی ندارد", menu=menu)
 		
-		ls = sql.chain(f"SELECT channel FROM channels")
-		
+		ls = api.channel_ids()
+
 		if chat.id in ls:
 			raise CmdException("❌ کانال از قبل اضافه شده است", menu=menu)
 		
@@ -251,7 +252,7 @@ async def add_channel_cmd(bot, msg):
 		except:
 			raise CmdException("❌ ربات به کانال اضافه نشده است", menu=menu)
 		
-		sql.run(f"INSERT INTO channels (channel, name) VALUES (%s, %s)", (chat.id, chat.title))
+		api.channel_add(chat.id, chat.title)
 		
 		await msg.reply("✅ کانال اضافه شد", reply_markup=admin_buttons(msg.from_user))
 		
@@ -272,18 +273,18 @@ async def remove_channel_cmd(bot, msg):
 			["🏛 پنل مدیریت"]
 		], resize_keyboard=True)
 		
-		channels = sql.chain("SELECT id, name FROM channels")
-		
+		channels = [v for c in api.channels_list() for v in (c["id"], c["name"])]
+
 		if not channels:
 			raise CmdException("❌ هیچ کانالی اضافه نشده است", menu=menu)
-		
+
 		first = True
 		inx = 0
-		
+
 		while True:
 			if not first:
-				channels = sql.chain("SELECT id, name FROM channels")
-				
+				channels = [v for c in api.channels_list() for v in (c["id"], c["name"])]
+
 				if not channels:
 					await waiter.delete()
 			
@@ -335,7 +336,7 @@ async def remove_channel_cmd(bot, msg):
 				ans = click.data
 				
 				if ans == "confirm":
-					sql.run(f"DELETE FROM channels WHERE id = {id}")
+					api.channel_delete(id)
 					
 					if inx - 1 > 0:
 						inx -= 1
@@ -450,8 +451,7 @@ async def set_messages_cmd(bot, msg):
 		
 		if ans == "confirm":
 			new = [(msg.from_user.id, m.id) for m in got]
-			new = repr(new)
-			sql.run("UPDATE messages SET list = %s WHERE name = %s", (new, part))
+			api.message_set(part, new)
 			
 			await msg.reply("✅ پیام ها ثبت شدند", reply_markup=admin_buttons(msg.from_user))
 		

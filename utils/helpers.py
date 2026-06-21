@@ -7,7 +7,7 @@ from pyromod.helpers import kb, ikb, kbtn
 from pyrogram.types import ReplyKeyboardMarkup
 from pyromod.exceptions.listener_timeout import ListenerTimeout
 
-from utils.sql import sql
+from utils import api
 from utils.env import PROXY
 
 
@@ -78,7 +78,7 @@ async def log_error(id, full, btn=None, menu=True):
 
 # is user
 def isUser(user):
-	ids = sql.chain('SELECT id FROM users')
+	ids = api.user_ids()
 	if user.id in ids:
 		check_username(user)
 		return True
@@ -86,7 +86,7 @@ def isUser(user):
 
 # is admin
 def isAdmin(user):
-	ids = sql.chain('SELECT id FROM admins WHERE type = "admin" OR type = "head" OR type = "dev"')
+	ids = api.admin_ids(['admin', 'head', 'dev'])
 	if user.id in ids:
 		check_username(user)
 		return True
@@ -94,7 +94,7 @@ def isAdmin(user):
 
 # is head
 def isHead(user):
-	ids = sql.chain('SELECT id FROM admins WHERE type = "head" OR type = "dev"')
+	ids = api.admin_ids(['head', 'dev'])
 	if user.id in ids:
 		check_username(user)
 		return True
@@ -102,14 +102,16 @@ def isHead(user):
 
 # check username
 def check_username(user):
-	username, name = sql.chain(f"SELECT username, name FROM users WHERE id = {user.id}")
-	
+	record = api.user_get(user.id)
+	username = record["username"] if record else None
+	name = record["name"] if record else None
+
 	user_name = user.first_name
 	if user.last_name:
 		user_name += f" {user.last_name}"
-	
+
 	if user.username != username or user_name != name:
-		sql.run(f"UPDATE users SET username = %s, name = %s WHERE id = {user.id}", (user.username, user_name))
+		api.user_update(user.id, username=user.username, name=user_name)
 
 # check user
 async def check_user(bot, msg):
@@ -140,9 +142,9 @@ async def check_user(bot, msg):
 		if msg.from_user.last_name:
 			user_name += f" {msg.from_user.last_name}"
 		
-		sql.run(f"INSERT INTO users (id, username, name, number) VALUES ({msg.from_user.id}, %s, %s, %s)", (msg.from_user.username, user_name, contact.phone_number))
-	
-	channels = sql.chain("SELECT channel FROM channels")
+		api.user_add(msg.from_user.id, msg.from_user.username, user_name, contact.phone_number)
+
+	channels = api.channel_ids()
 	if channels:
 		joined = True
 		
@@ -173,7 +175,7 @@ async def check_user(bot, msg):
 
 # send to all admins
 async def send_to_all_admins(bot, message):
-	admins = sql.chain("SELECT id FROM admins")
+	admins = api.admin_ids()
 	for admin in admins:
 		try:
 			await bot.send_message(admin, message)
