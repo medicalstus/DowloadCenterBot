@@ -7,6 +7,10 @@ medical_website backend over HTTPS, authenticated with the shared X-Bot-Key.
 The bot keeps its own Telegram token in .env; no database lives here anymore.
 """
 
+import io
+import os
+from urllib.parse import urlparse, urlsplit, urlunsplit, quote, unquote
+
 import requests
 
 from utils.env import API_BASE_URL, API_KEY
@@ -180,6 +184,34 @@ def dc_files(category=0):
 
 def dc_file_increment(id):
     return _post(f"tgbot/dc-files/{id}/increment")
+
+
+def dc_file_download(file_url):
+    """Download a download-center file so the bot uploads the *bytes* to
+    Telegram itself, instead of handing Telegram the URL.
+
+    Passing a bare URL to Telegram's sendDocument fails when the link needs
+    auth, isn't a direct file, has non-ASCII/space chars (Persian file names),
+    or is larger than Telegram's ~20MB URL-fetch limit. Returns a named
+    file-like object ready for reply_document().
+    """
+    # make relative paths absolute against the API host
+    if not file_url.startswith(("http://", "https://")):
+        base = urlparse(API_BASE_URL)
+        file_url = f"{base.scheme}://{base.netloc}/{file_url.lstrip('/')}"
+
+    # percent-encode the path (Persian names / spaces) without touching the rest
+    parts = urlsplit(file_url)
+    url = urlunsplit((parts.scheme, parts.netloc, quote(parts.path, safe="/%"), parts.query, parts.fragment))
+
+    # only send our backend key to our own host, never to a third party
+    headers = {"X-Bot-Key": API_KEY} if parts.netloc == urlparse(API_BASE_URL).netloc else {}
+    r = requests.get(url, headers=headers, timeout=120)
+    r.raise_for_status()
+
+    bio = io.BytesIO(r.content)
+    bio.name = unquote(os.path.basename(parts.path)) or "file"
+    return bio
 
 
 # ── Channels ──────────────────────────────────────────────────────────────────

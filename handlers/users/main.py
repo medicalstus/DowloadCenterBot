@@ -11,6 +11,17 @@ from utils import api
 from utils.helpers import CmdException, send_error, log_error, buttons, check_user, write_error, chunk
 
 
+# send a download-center note to the user
+async def send_dc_file(msg, file_url, name):
+	# Fast path: let Telegram fetch the URL. If that fails (auth-protected link,
+	# Persian/space chars in the URL, or file over Telegram's ~20MB URL limit),
+	# download the file in the bot and upload the bytes instead.
+	try:
+		await msg.reply_document(file_url, caption=f"📄 {name}")
+	except Exception:
+		await msg.reply_document(api.dc_file_download(file_url), caption=f"📄 {name}")
+
+
 # start cmd
 async def start_cmd(bot, msg):
 	check = await check_user(bot, msg)
@@ -107,7 +118,7 @@ async def files_cmd(bot, msg):
 				id = int(ans.split("/")[1])
 				name, file_url = next((name, file_url) for fid, name, file_url in files if fid == id)
 
-				await msg.reply_document(file_url, caption=f"📄 {name}")
+				await send_dc_file(msg, file_url, name)
 				try:
 					api.dc_file_increment(id)
 				except:
@@ -117,7 +128,7 @@ async def files_cmd(bot, msg):
 
 			elif ans == "sendallfiles":
 				for id, name, file_url in files:
-					await msg.reply_document(file_url, caption=f"📄 {name}")
+					await send_dc_file(msg, file_url, name)
 					try:
 						api.dc_file_increment(id)
 					except:

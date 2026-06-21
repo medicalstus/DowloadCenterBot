@@ -10,7 +10,10 @@ API_HASH = os.getenv("API_HASH")
 
 # medical_website backend API (replaces the old MySQL database)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://apiwebsite.medicalstus.ir/api")
-API_KEY = os.getenv("API_KEY", "")
+# Shared key the bot sends to the backend as X-Bot-Key; must equal the backend's
+# key. Accept either name so the same value works whether it is set as API_KEY
+# (bot side, as documented) or TGBOT_API_KEY (the backend's variable name).
+API_KEY = os.getenv("API_KEY") or os.getenv("TGBOT_API_KEY", "")
 
 # proxy
 PROXY = os.getenv("PROXY", "0")
