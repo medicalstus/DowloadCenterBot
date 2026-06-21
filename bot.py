@@ -7,7 +7,7 @@ ParsCoders = https://parscoders.com/resume/340299
 
 
 import os
-import asyncio
+import time
 
 from pyromod import Client
 from pyrogram import idle, filters
@@ -85,46 +85,28 @@ async def on_callback():
 # ==============================
 
 
-async def start_bot():
-	"""Start the client, surviving FloodWait instead of crash-looping.
+# Start the client, surviving FloodWait instead of crash-looping. If we let
+# FloodWait bubble up, the process dies, the platform restarts it, and it
+# re-tries auth right away -> the wait Telegram demands keeps growing. Waiting
+# *inside* the process lets the limit expire once and then the bot comes up.
+# pyrogram's start() disconnects itself before re-raising, so a plain retry is
+# safe. (Sync style on purpose: this kurigram's run() takes no coroutine.)
+while True:
+	try:
+		bot.start()
+		break
+	except FloodWait as e:
+		wait = int(getattr(e, "value", None) or getattr(e, "x", 60)) + 5
+		print(f"[start] FloodWait from Telegram: waiting {wait}s before retrying...", flush=True)
+		time.sleep(wait)
 
-	If we just let FloodWait bubble up, the process dies, the container's
-	restart policy brings it back, and it re-tries auth immediately -> the
-	wait Telegram demands keeps growing. Waiting *inside* the process lets the
-	limit expire once and then the bot comes up normally.
-	"""
-	while True:
-		try:
-			await bot.start()
-			return
-		except FloodWait as e:
-			wait = int(getattr(e, "value", None) or getattr(e, "x", 60)) + 5
-			print(
-				f"[start] FloodWait from Telegram: waiting {wait}s before retrying...",
-				flush=True,
-			)
-			# auth failed mid-connect; drop the connection before retrying
-			try:
-				await bot.disconnect()
-			except Exception:
-				pass
-			await asyncio.sleep(wait)
+me = bot.get_users("me")
+api.set_username(me.username)
+bot.username = me.username
 
+register()
 
-async def main():
-	await start_bot()
+print(f"{'='*30}\nBot started @{me.username}\nCreated By Cypher\n{'='*30}", flush=True)
 
-	me = await bot.get_users("me")
-	api.set_username(me.username)
-	bot.username = me.username
-
-	register()
-
-	print(f"{'='*30}\nBot started @{me.username}\nCreated By Cypher\n{'='*30}", flush=True)
-
-	await idle()
-	await bot.stop()
-
-
-# run bot
-bot.run(main())
+idle()
+bot.stop()
